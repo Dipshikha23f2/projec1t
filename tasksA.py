@@ -74,31 +74,62 @@ def A5(log_dir_path='/data/logs', output_file_path='/data/logs-recent.txt', num_
                 first_line = f_in.readline().strip()
                 f_out.write(f"{first_line}\n")
 
-def A6(doc_dir_path='/data/docs', output_file_path='/data/docs/index.json'):
-    docs_dir = doc_dir_path
-    output_file = output_file_path
-    index_data = {}
+import os
+import json
+import re
+import requests
 
-    # Walk through all files in the docs directory
-    for root, _, files in os.walk(docs_dir):
-        for file in files:
-            if file.endswith('.md'):
-                # print(file)
-                file_path = os.path.join(root, file)
-                # Read the file and find the first occurrence of an H1
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        if line.startswith('# '):
-                            # Extract the title text after '# '
-                            title = line[2:].strip()
-                            # Get the relative path without the prefix
-                            relative_path = os.path.relpath(file_path, docs_dir).replace('\\', '/')
-                            index_data[relative_path] = title
-                            break  # Stop after the first H1
-    # Write the index data to index.json
-    # print(index_data)
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(index_data, f, indent=4)
+AIPROXY_TOKEN = os.getenv("AIPROXY_TOKEN")
+
+def extract_email(filename='/data/email.txt', output_filename='/data/email-sender.txt'):
+    try:
+        # Read email content
+        with open(filename, 'r', encoding='utf-8') as f:
+            email_content = f.read().strip()
+
+        if not email_content:
+            raise ValueError("❌ Email file is empty.")
+
+        # LLM prompt to extract email
+        body = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Extract the sender's email address from this email:\n\n{email_content}\n\nReturn only the email address."
+                }
+            ]
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {AIPROXY_TOKEN}"
+        }
+
+        # Make request to AIProxy
+        response = requests.post("http://aiproxy.sanand.workers.dev/openai/v1/chat/completions",
+                                 headers=headers, data=json.dumps(body))
+
+        response.raise_for_status()
+        result = response.json()
+        sender_email = result['choices'][0]['message']['content'].strip()
+
+        # Validate email format
+        email_pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+        match = re.search(email_pattern, sender_email)
+        if not match:
+            raise ValueError("❌ No valid email found in LLM response.")
+
+        # Write extracted email to file
+        with open(output_filename, 'w', encoding='utf-8') as f:
+            f.write(match.group())
+
+        print(f"✅ Email extracted: {match.group()}")
+    except Exception as e:
+        print(f"❌ Email extraction failed: {e}")
+
+# Run the email extraction before A6
+extract_email()
 
 def A7(filename='/data/email.txt', output_file='/data/email-sender.txt'):
     # Read the content of the email
